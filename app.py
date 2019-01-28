@@ -12,16 +12,15 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./library.db'
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-
 book_author = db.Table('book_author',
-    db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
-    db.Column('author_id', db.Integer, db.ForeignKey('author.id'), primary_key=True)
-)
+                       db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
+                       db.Column('author_id', db.Integer, db.ForeignKey('author.id'), primary_key=True)
+                       )
 
 book_category = db.Table('book_category',
-    db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
-    db.Column('category_id', db.Integer, db.ForeignKey('category.id'), primary_key=True)
-)
+                         db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
+                         db.Column('category_id', db.Integer, db.ForeignKey('category.id'), primary_key=True)
+                         )
 
 
 class Category(db.Model):
@@ -40,7 +39,8 @@ class Book(db.Model):
     description = db.Column(db.String(200), unique=False, nullable=True)
     url_image = db.Column(db.String(80), unique=False, nullable=True)
     authors = db.relationship('Author', secondary=book_author, lazy='subquery', backref=db.backref('books', lazy=True))
-    categories = db.relationship('Category', secondary=book_category, lazy='subquery', backref=db.backref('books', lazy=True))
+    categories = db.relationship('Category', secondary=book_category, lazy='subquery',
+                                 backref=db.backref('books', lazy=True))
 
     def __repr__(self):
         return '<Book,{}>'.format(self.title)
@@ -99,14 +99,16 @@ def books():
         auth = data.get('authors')
         cat = data.get('categories')
         book = Book(title=data.get('title'), subtitle=data.get('subtitle'))
-        for author in auth:
-            au = Author.query.filter_by(name=author).first()
-            if au:
-                book.authors.append(au)
-        for c in cat:
-            category_ = Category.query.filter_by(name=c).first()
-            if category_:
-                book.categories.append(category_)
+        if auth:
+            for author in auth:
+                au = Author.query.filter_by(name=author).first()
+                if au:
+                    book.authors.append(au)
+        if cat:
+            for c in cat:
+                category_ = Category.query.filter_by(name=c).first()
+                if category_:
+                    book.categories.append(category_)
         try:
             db.session.add(book)
             db.session.commit()
@@ -135,12 +137,18 @@ def books():
             return jsonify({"error": {"description": "Book does not exist"}}), 400
 
 
-@app.route('/books/search', methods=['GET', 'POST', 'DELETE'])
+@app.route('/books/search/', methods=['GET', 'POST', 'DELETE'])
 def search_books():
-    title = request.args.get('title')
-    subtitle = request.args.get('subtitle')
-    editor = request.args.get('editor')
-    
+    if request.method == 'GET':
+        title = request.args.get('title')
+        subtitle = request.args.get('subtitle')
+        if title:
+            books_ = Book.query.filter_by(title=title)
+        elif subtitle:
+            books_ = Book.query.filter_by(subtitle=subtitle)
+        result = [{"title": book.title, "subtitle": book.subtitle} for book in books_]
+        return jsonify({"data": result}), 200
+
 
 db.create_all()
 
