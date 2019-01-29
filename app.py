@@ -1,9 +1,12 @@
 import os
-from flask import Flask, jsonify, request, render_template
+
+from flask import Flask, jsonify, request, render_template, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import exc
 from flask_migrate import Migrate
+
+import requests
 
 app = Flask(__name__)
 
@@ -140,15 +143,32 @@ def books():
 @app.route('/books/search/', methods=['GET', 'POST', 'DELETE'])
 def search_books():
     if request.method == 'GET':
+        print(request.args)
         title = request.args.get('title')
         subtitle = request.args.get('subtitle')
+        books_result = []
         if title:
-            books_ = Book.query.filter_by(title=title)
-        elif subtitle:
-            books_ = Book.query.filter_by(subtitle=subtitle)
-        result = [{"title": book.title, "subtitle": book.subtitle} for book in books_]
-        return jsonify({"data": result}), 200
+            books_result = Book.query.filter_by(title=title)
+            if not books_result.count():
+                try:
+                    payload = {'q': 'intitle:' + title, 'key': 'AIzaSyD5XeAWr1rtAVpwE6PjGmaryapYPKKeJE8'}
+                    response = requests.get('https://www.googleapis.com/books/v1/volumes', params=payload)
+                    if response.status_code == 200:
+                        items = response.json().get('items')
+                        r = [dict(id=b.get('id'), title=b.get('volumeInfo').get('title'),
+                                  subtitle=b.get('volumeInfo').get('subtitle', ''),
+                                  authors=b.get('volumeInfo').get('authors')) for b in items]
+                        return jsonify({"data": r, "msg": "response from google books"}), 200
+                        #return Response(r, mimetype='application/json')
+                        #response = response.json()
+                        #return jsonify({"msg": "response from google books", "data": response}), 200
+                except ConnectionError:
+                    return jsonify({"error": 'Connection error'})
 
+        elif subtitle:
+            books_result = Book.query.filter_by(subtitle=subtitle)
+        result = [{"title": book.title, "subtitle": book.subtitle} for book in books_result]
+        return jsonify({"data": result}), 200
 
 db.create_all()
 
