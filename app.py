@@ -108,6 +108,7 @@ def retrieve_books(query_params=None, id_book=None):
             payload = {'q': query_params, 'key': 'AIzaSyD5XeAWr1rtAVpwE6PjGmaryapYPKKeJE8'}
             url = 'https://www.googleapis.com/books/v1/volumes'
         response = requests.get(url, params=payload)
+        print(response.url)
         if response.status_code == 200:
             items = response.json().get('items')
             if items:
@@ -189,19 +190,23 @@ def books():
             return jsonify({"error": {"description": "Book does not exist"}}), 400
 
 
-@app.route('/books/search/', methods=['GET', 'POST', 'DELETE'])
+@app.route('/books/search/', methods=['GET'])
 def search_books():
     if request.method == 'GET':
         print(request.args)
         title = request.args.get('title')
         subtitle = request.args.get('subtitle')
-        books_result = []
+        author = request.args.get('author')
+        param = ''
         if title:
             books_result = Book.query.filter_by(title=title)
-            if not books_result.count():
-                books_result = retrieve_books(query_params='intitle:' + title)
+            param = 'intitle:' + str(title)
         elif subtitle:
             books_result = Book.query.filter_by(subtitle=subtitle)
+        elif author:
+            pass
+        if not books_result.count():
+            books_result = retrieve_books(query_params=param)
         return jsonify({"data": books_result}), 200
 
 
