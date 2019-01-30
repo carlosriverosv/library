@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, jsonify, request, render_template, Response
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import exc
@@ -47,6 +47,10 @@ class Book(db.Model):
 
     def __repr__(self):
         return '<Book,{}>'.format(self.title)
+
+    def __str__(self):
+        return {"title": self.title, "subtitle": self.subtitle, "editor": self.editor,
+                "description": self.description}
 
 
 class Author(db.Model):
@@ -95,23 +99,68 @@ def authors():
         return jsonify({"data": result}), 200
 
 
+def retrieve_books(query_params=None, id_book=None):
+    try:
+        if id_book:
+            payload = {'key': 'AIzaSyD5XeAWr1rtAVpwE6PjGmaryapYPKKeJE8'}
+            url = 'https://www.googleapis.com/books/v1/volumes/' + str(id_book)
+        else:
+            payload = {'q': query_params, 'key': 'AIzaSyD5XeAWr1rtAVpwE6PjGmaryapYPKKeJE8'}
+            url = 'https://www.googleapis.com/books/v1/volumes'
+        response = requests.get(url, params=payload)
+        if response.status_code == 200:
+            items = response.json().get('items')
+            if items:
+                r = [dict(id=b.get('id'), title=b.get('volumeInfo').get('title'),
+                          subtitle=b.get('volumeInfo').get('subtitle', ''),
+                          authors=b.get('volumeInfo').get('authors'),
+                          categories=b.get('volumeInfo').get('categories')) for b in items]
+                print(r)
+                return r
+            b = response.json()
+            r = dict(id=b.get('id'), title=b.get('volumeInfo').get('title'),
+                     subtitle=b.get('volumeInfo').get('subtitle', ''),
+                     authors=b.get('volumeInfo').get('authors'),
+                     categories=b.get('volumeInfo').get('categories'))
+            print(r)
+            return r
+    except ConnectionError:
+        return jsonify({"error": 'Connection error'})
+
+
 @app.route('/books', methods=['GET', 'POST', 'DELETE'])
 def books():
     if request.method == "POST":
         data = request.json
-        auth = data.get('authors')
-        cat = data.get('categories')
-        book = Book(title=data.get('title'), subtitle=data.get('subtitle'))
+        id_book = data.get('id')
+        if id_book:
+            book = retrieve_books(id_book=id_book)
+            title = book.get('title', '')
+            subtitle = book.get('subtitle', '')
+            auth = book.get('authors', '')
+            cat = book.get('categories', '')
+        else:
+            auth = data.get('authors')
+            cat = data.get('categories')
+            title = data.get('title')
+            subtitle = data.get('subtitle')
+        book = Book(title=title, subtitle=subtitle)
         if auth:
             for author in auth:
                 au = Author.query.filter_by(name=author).first()
-                if au:
-                    book.authors.append(au)
+                if not au:
+                    au = Author(name=author)
+                    db.session.add(au)
+                    db.session.commit()
+                book.authors.append(au)
         if cat:
             for c in cat:
                 category_ = Category.query.filter_by(name=c).first()
-                if category_:
-                    book.categories.append(category_)
+                if not category_:
+                    category_ = Category(name=c)
+                    db.session.add(category_)
+                    db.session.commit()
+                book.categories.append(category_)
         try:
             db.session.add(book)
             db.session.commit()
@@ -122,7 +171,7 @@ def books():
             return jsonify({"data": {"title": book.title, "subtitle": book.subtitle}}), 201
     elif request.method == "GET":
         books_ = Book.query.all()
-        result = [{"title": book.title, "subtitle": book.subtitle} for book in books_]
+        result = [book.__str__() for book in books_]
         return jsonify({"data": result}), 200
     elif request.method == "DELETE":
         data = request.json
@@ -150,25 +199,11 @@ def search_books():
         if title:
             books_result = Book.query.filter_by(title=title)
             if not books_result.count():
-                try:
-                    payload = {'q': 'intitle:' + title, 'key': 'AIzaSyD5XeAWr1rtAVpwE6PjGmaryapYPKKeJE8'}
-                    response = requests.get('https://www.googleapis.com/books/v1/volumes', params=payload)
-                    if response.status_code == 200:
-                        items = response.json().get('items')
-                        r = [dict(id=b.get('id'), title=b.get('volumeInfo').get('title'),
-                                  subtitle=b.get('volumeInfo').get('subtitle', ''),
-                                  authors=b.get('volumeInfo').get('authors')) for b in items]
-                        return jsonify({"data": r, "msg": "response from google books"}), 200
-                        #return Response(r, mimetype='application/json')
-                        #response = response.json()
-                        #return jsonify({"msg": "response from google books", "data": response}), 200
-                except ConnectionError:
-                    return jsonify({"error": 'Connection error'})
-
+                books_result = retrieve_books(query_params='intitle:' + title)
         elif subtitle:
             books_result = Book.query.filter_by(subtitle=subtitle)
-        result = [{"title": book.title, "subtitle": book.subtitle} for book in books_result]
-        return jsonify({"data": result}), 200
+        return jsonify({"data": books_result}), 200
+
 
 db.create_all()
 
