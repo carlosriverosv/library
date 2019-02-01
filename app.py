@@ -1,25 +1,74 @@
 import os
+
 import requests
-
 from flask import Flask, jsonify, request
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import exc
 from flask_migrate import Migrate
-
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import exc
+from sqlalchemy.exc import IntegrityError
 
 app = Flask(__name__)
-
 db_path = os.path.join(os.path.dirname(__file__), 'library.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./library.db'
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 
-from models import Book, Category, Author
+book_author = db.Table('book_author',
+                       db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
+                       db.Column('author_id', db.Integer, db.ForeignKey('author.id'), primary_key=True)
+                       )
+
+book_category = db.Table('book_category',
+                         db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
+                         db.Column('category_id', db.Integer, db.ForeignKey('category.id'), primary_key=True)
+                         )
 
 
-@app.route('/categories', methods=['GET', 'POST', 'DELETE'])
+class Category(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20), unique=True)
+
+    def __repr__(self):
+        return '<Category, {}>'.format(self.name)
+
+    def __str__(self):
+        return self.name
+
+
+class Book(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(80), unique=False, nullable=True)
+    subtitle = db.Column(db.String(80), unique=False, nullable=True)
+    editor = db.Column(db.String(80), unique=False, nullable=True)
+    description = db.Column(db.String(200), unique=False, nullable=True)
+    url_image = db.Column(db.String(80), unique=False, nullable=True)
+    authors = db.relationship('Author', secondary=book_author, backref=db.backref('books', lazy=True))
+    categories = db.relationship('Category', secondary=book_category, lazy='subquery',
+                                 backref=db.backref('books', lazy=True))
+
+    def __repr__(self):
+        return '<Book,{}>'.format(self.title)
+
+    def __str__(self):
+        return {"id": self.id, "title": self.title, "subtitle": self.subtitle, "editor": self.editor,
+                "description": self.description, "authors": [ath.__str__() for ath in list(self.authors)],
+                "categories": [cat.__str__() for cat in list(self.categories)],
+                "image": self.url_image}
+
+
+class Author(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True)
+
+    def __repr__(self):
+        return '<Author,{}>'.format(self.name)
+
+    def __str__(self):
+        return self.name
+
+
+@app.route('/categories', methods=['GET', 'POST'])
 def categories():
     if request.method == 'POST':
         data = request.json
@@ -38,7 +87,7 @@ def categories():
         return jsonify({"data": result}), 200
 
 
-@app.route('/authors', methods=['GET', 'POST', 'DELETE'])
+@app.route('/authors', methods=['GET', 'POST'])
 def authors():
     if request.method == 'POST':
         data = request.json
@@ -98,13 +147,13 @@ def books():
         id_book = data.get('id')
         if id_book:
             book = retrieve_books(id_book=id_book)
-            title = book.get('title', '')
-            subtitle = book.get('subtitle', '')
-            description = book.get('description', '')
-            editor = book.get('editor', '')
-            auth = book.get('authors', '')
-            cat = book.get('categories', '')
-            url_image = book.get('url_image', '')
+            title = book.get('title')
+            subtitle = book.get('subtitle')
+            description = book.get('description')
+            editor = book.get('editor')
+            auth = book.get('authors')
+            cat = book.get('categories')
+            url_image = book.get('url_image')
         else:
             auth = data.get('authors', '')
             cat = data.get('categories', '')
@@ -150,7 +199,7 @@ def books():
             db.session.delete(book)
             try:
                 db.session.commit()
-                return jsonify("Book deleted"), 200
+                return jsonify({"msg": "Book deleted"}), 200
             except exc.SQLAlchemyError as e:
                 print(e)
                 return jsonify({"error": {"description": "Error while processing request"}}), 400
